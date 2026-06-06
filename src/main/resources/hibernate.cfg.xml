@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE hibernate-configuration PUBLIC
+        "-//Hibernate/Hibernate Configuration DTD 3.0//EN"
+        "http://www.hibernate.org/dtd/hibernate-configuration-3.0.dtd">
+
+<hibernate-configuration>
+    <session-factory>
+        <property name="connection.driver_class">com.mysql.cj.jdbc.Driver</property>
+        <property name="connection.url">jdbc:mysql://localhost:3306/aulateca_db?createDatabaseIfNotExist=true</property>
+        <property name="connection.username">root</property>
+        <property name="connection.password">1234</property> <property name="dialect">org.hibernate.dialect.MySQLDialect</property>
+
+        <property name="hbm2ddl.auto">update</property>
+
+        <property name="show_sql">true</property>
+        <property name="format_sql">true</property>
+
+        <!-- Al crear una entidad, hay que avisar a Hibernate-->
+        <mapping class="aulateca.model.ResourceType"/>
+        <mapping class="aulateca.model.ResourceStatus"/>
+        <mapping class="aulateca.model.User"/>
+        <mapping class="aulateca.model.Resource"/>
+        <mapping class="aulateca.model.TimeSlot"/>
+        <mapping class="aulateca.model.Reservation"/>
+
+    </session-factory>
+</hibernate-configuration>
