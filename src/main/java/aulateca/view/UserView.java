@@ -5,12 +5,18 @@ import aulateca.model.Role;
 import aulateca.model.User;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
+// ventana para la gestion de los usuarios
 public class UserView extends JDialog {
 
+    // elementos visuales de la pantalla
     private JTable tablaUsuarios;
     private DefaultTableModel modeloTabla;
     private JTextField txtUsername;
@@ -18,20 +24,31 @@ public class UserView extends JDialog {
     private JTextField txtFullName;
     private JComboBox<Role> comboRol;
 
+    // caja de texto para buscar usuarios
+    private JTextField txtBuscador;
+
+    // lista para guardar los datos y que el buscador vaya mas rapido
+    private List<User> todosLosUsuarios = new ArrayList<>();
+
+    // conexion con la base de datos y control del usuario seleccionado
     private final UserDAO dao = new UserDAO();
     private Integer idUsuarioSeleccionado = null;
 
+    // configuracion principal de la ventana
     public UserView(Frame parent) {
         super(parent, "Gestión de Usuarios", true);
-        setSize(650, 500);
+        setSize(700, 550);
         setLocationRelativeTo(parent);
         setLayout(new BorderLayout(10, 10));
 
         inicializarComponentes();
-        cargarDatosEnTabla();
+        cargarUsuariosDesdeDB();
     }
 
+    // dibuja y coloca todos los botones, textos y paneles
     private void inicializarComponentes() {
+
+        // zona de arriba: formulario para crear o editar
         JPanel panelFormulario = new JPanel(new GridBagLayout());
         panelFormulario.setBorder(BorderFactory.createTitledBorder("Datos del Usuario"));
         GridBagConstraints gbc = new GridBagConstraints();
@@ -62,12 +79,12 @@ public class UserView extends JDialog {
         comboRol = new JComboBox<>(Role.values());
         panelFormulario.add(comboRol, gbc);
 
+        // botones propios del formulario
         gbc.gridx = 1; gbc.gridy = 4;
         JPanel panelBotones = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         JButton btnGuardar = new JButton("Crear Nuevo");
         JButton btnActualizar = new JButton("Actualizar");
 
-        // aplicamos el estilo de boton web plano
         aplicarEstiloBoton(btnGuardar, new Color(40, 167, 69));
         aplicarEstiloBoton(btnActualizar, new Color(253, 126, 20));
         btnActualizar.setEnabled(false);
@@ -78,22 +95,52 @@ public class UserView extends JDialog {
 
         add(panelFormulario, BorderLayout.NORTH);
 
+        // zona central: buscador y la tabla con los datos
+        JPanel panelCentral = new JPanel(new BorderLayout(5, 5));
+        panelCentral.setBorder(BorderFactory.createEmptyBorder(0, 10, 0, 10));
+
+        JPanel panelBuscador = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        panelBuscador.add(new JLabel("🔍 Buscar Usuario:"));
+        txtBuscador = new JTextField(25);
+        txtBuscador.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(206, 212, 218)),
+                BorderFactory.createEmptyBorder(5, 5, 5, 5)
+        ));
+
+        // hace que la lista se filtre sola al ir tecleando
+        txtBuscador.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) { aplicarFiltros(); }
+            @Override
+            public void removeUpdate(DocumentEvent e) { aplicarFiltros(); }
+            @Override
+            public void changedUpdate(DocumentEvent e) { aplicarFiltros(); }
+        });
+        panelBuscador.add(txtBuscador);
+        panelCentral.add(panelBuscador, BorderLayout.NORTH);
+
+        // creacion de la tabla para que no se pueda escribir en ella directamente
         modeloTabla = new DefaultTableModel(new String[]{"ID", "Usuario", "Nombre Completo", "Rol"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) { return false; }
         };
         tablaUsuarios = new JTable(modeloTabla);
         tablaUsuarios.setRowHeight(25);
-        // ocultamos visualmente la columna id para limpiar la tabla
+
+        // esconde la primera columna del ID para que quede mas limpio
         tablaUsuarios.getColumnModel().getColumn(0).setMinWidth(0);
         tablaUsuarios.getColumnModel().getColumn(0).setMaxWidth(0);
         tablaUsuarios.getColumnModel().getColumn(0).setWidth(0);
 
-        add(new JScrollPane(tablaUsuarios), BorderLayout.CENTER);
+        panelCentral.add(new JScrollPane(tablaUsuarios), BorderLayout.CENTER);
+        add(panelCentral, BorderLayout.CENTER);
 
-        JPanel panelInferior = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        // zona de abajo: botones secundarios
+        JPanel panelInferior = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
+        panelInferior.setBorder(BorderFactory.createEmptyBorder(0, 0, 10, 10));
+
         JButton btnBorrar = new JButton("Borrar Seleccionado");
-        JButton btnLimpiar = new JButton("Limpiar");
+        JButton btnLimpiar = new JButton("Limpiar Formulario");
 
         aplicarEstiloBoton(btnBorrar, new Color(220, 53, 69));
         aplicarEstiloBoton(btnLimpiar, new Color(108, 117, 125));
@@ -102,6 +149,7 @@ public class UserView extends JDialog {
         panelInferior.add(btnBorrar);
         add(panelInferior, BorderLayout.SOUTH);
 
+        // al pinchar en una fila de la tabla, los datos suben al formulario
         tablaUsuarios.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && tablaUsuarios.getSelectedRow() != -1) {
                 int fila = tablaUsuarios.getSelectedRow();
@@ -115,6 +163,7 @@ public class UserView extends JDialog {
             }
         });
 
+        // bloque de codigo para guardar un usuario nuevo
         btnGuardar.addActionListener(e -> {
             String username = txtUsername.getText().trim();
             String password = new String(txtPassword.getPassword()).trim();
@@ -127,12 +176,13 @@ public class UserView extends JDialog {
                 nuevo.setFullName(txtFullName.getText().trim());
                 dao.save(nuevo);
                 limpiarFormulario(btnGuardar, btnActualizar);
-                cargarDatosEnTabla();
+                cargarUsuariosDesdeDB();
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "error al guardar usuario", "error", JOptionPane.ERROR_MESSAGE);
             }
         });
 
+        // bloque de codigo para modificar un usuario existente
         btnActualizar.addActionListener(e -> {
             if (idUsuarioSeleccionado == null) return;
             try {
@@ -144,30 +194,39 @@ public class UserView extends JDialog {
                 if (!p.isEmpty()) u.setPassword(p);
                 dao.update(u);
                 limpiarFormulario(btnGuardar, btnActualizar);
-                cargarDatosEnTabla();
+                cargarUsuariosDesdeDB();
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "error al actualizar", "error", JOptionPane.ERROR_MESSAGE);
             }
         });
 
+        // bloque de codigo para eliminar un usuario manejando la integridad referencial
         btnBorrar.addActionListener(e -> {
             if (idUsuarioSeleccionado == null) return;
             if (JOptionPane.showConfirmDialog(this, "¿borrar usuario?", "confirmar", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
                 try {
                     dao.delete(dao.findById(User.class, idUsuarioSeleccionado));
                     limpiarFormulario(btnGuardar, btnActualizar);
-                    cargarDatosEnTabla();
+                    cargarUsuariosDesdeDB();
+                    JOptionPane.showMessageDialog(this, "Usuario borrado con éxito.");
                 } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(this, "no se puede borrar", "error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(this,
+                            "No se puede borrar este usuario porque tiene reservas asociadas en el historial.\n\nPor favor, ve a la Gestión de Reservas y elimina sus reservas primero.",
+                            "Aviso de Integridad",
+                            JOptionPane.WARNING_MESSAGE);
                 }
             }
         });
 
-        btnLimpiar.addActionListener(e -> limpiarFormulario(btnGuardar, btnActualizar));
+        // accion para vaciar todo
+        btnLimpiar.addActionListener(e -> {
+            limpiarFormulario(btnGuardar, btnActualizar);
+            txtBuscador.setText("");
+        });
     }
 
+    // metodo para poner los botones de colores sin el estilo de windows
     private void aplicarEstiloBoton(JButton btn, Color bg) {
-        // metodo auxiliar para estandarizar el look plano en toda la aplicacion
         btn.setUI(new javax.swing.plaf.basic.BasicButtonUI());
         btn.setBackground(bg);
         btn.setForeground(Color.WHITE);
@@ -178,6 +237,7 @@ public class UserView extends JDialog {
         btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
     }
 
+    // borra los textos y prepara el formulario para uno nuevo
     private void limpiarFormulario(JButton g, JButton a) {
         txtUsername.setText(""); txtPassword.setText(""); txtFullName.setText("");
         comboRol.setSelectedIndex(0);
@@ -186,16 +246,35 @@ public class UserView extends JDialog {
         g.setEnabled(true); a.setEnabled(false);
     }
 
-    private void cargarDatosEnTabla() {
-        modeloTabla.setRowCount(0);
-        // bloque de seguridad para que el programa no colapse si la bd falla
+    // lee la base de datos y guarda los datos en memoria
+    private void cargarUsuariosDesdeDB() {
         try {
-            List<User> lista = dao.findAll(User.class);
-            for (User u : lista) {
-                modeloTabla.addRow(new Object[]{u.getId(), u.getUsername(), u.getFullName(), u.getRole().toString()});
-            }
+            todosLosUsuarios = dao.findAll(User.class);
+            aplicarFiltros();
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "error al cargar la lista", "error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    // busca las coincidencias entre el texto escrito y la lista de usuarios
+    private void aplicarFiltros() {
+        String textoBusqueda = txtBuscador.getText().trim().toLowerCase();
+
+        List<User> filtrados = todosLosUsuarios.stream()
+                .filter(u -> textoBusqueda.isEmpty() ||
+                        u.getUsername().toLowerCase().contains(textoBusqueda) ||
+                        (u.getFullName() != null && u.getFullName().toLowerCase().contains(textoBusqueda)) ||
+                        u.getRole().name().toLowerCase().contains(textoBusqueda))
+                .collect(Collectors.toList());
+
+        pintarTabla(filtrados);
+    }
+
+    // dibuja los resultados de la busqueda en la tabla visual
+    private void pintarTabla(List<User> lista) {
+        modeloTabla.setRowCount(0);
+        for (User u : lista) {
+            modeloTabla.addRow(new Object[]{u.getId(), u.getUsername(), u.getFullName(), u.getRole().toString()});
         }
     }
 }
